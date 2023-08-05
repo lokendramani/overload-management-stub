@@ -1,34 +1,45 @@
 package com.overload;
 
+import org.apache.log4j.Logger;
+
+import java.io.FileWriter;
+import java.io.IOException;
+import java.io.PrintWriter;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class ResponseReader {
-    private final ExecutorService consumerExecutor = Executors.newSingleThreadExecutor();
     private final BlockingQueue<Message> messageQueue;
+    private static final Logger LOGGER = Logger.getLogger(ResponseReader.class);
 
-    public ResponseReader(BlockingQueue<Message> mQueue){
+    private final String fileName;
+    private int numberOfMessages;
+
+    public ResponseReader(BlockingQueue<Message> mQueue,String fileName, int numberOfMessages){
         messageQueue = mQueue;
+        this.fileName = fileName;
+        this.numberOfMessages = numberOfMessages;
     }
-    public void start(){
-        Runnable consumerTask = () -> {
-            while (true) {
-                try {
+    public void start() throws IOException, InterruptedException {
+          long count = writeDataToFile(messageQueue);
 
-                    Message message = messageQueue.take();
-                    //processing delay.
-                    Thread.sleep(10);
-                    System.out.println("Received message: " + message.getType()+" QueueSize"+messageQueue.size());
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-            }
-        };
+          LOGGER.info("Received message: " + count);
+    }
 
-        consumerExecutor.submit(consumerTask);
+    private long writeDataToFile(BlockingQueue<Message> messageQueue) throws InterruptedException, IOException {
+        FileWriter fileWriter = new FileWriter(fileName);
+        PrintWriter printWriter = new PrintWriter(fileWriter);
+        long count = 0;
+        while(numberOfMessages > count){
+            printWriter.printf(messageQueue.take().getType()+"\n");
+            count++;
+            if(messageQueue.size() == 0)
+                break;
+        }
+        printWriter.flush();
+        printWriter.close();
+        return count;
     }
-    public void stop() {
-        consumerExecutor.shutdown();
-    }
+
 }

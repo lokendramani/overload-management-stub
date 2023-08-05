@@ -1,35 +1,46 @@
 package com.overload;
 
+import org.apache.log4j.Logger;
+
 import java.util.concurrent.*;
 
 public class WorkloadGenerator {
     private final BlockingQueue<Message> messageQueue;
-    private final ScheduledExecutorService publisherExecutor = Executors.newScheduledThreadPool(1);
+    private final ExecutorService publisherExecutor;
 
-    private final int messagesPerSecond;
+    private final int CORE_POOL_SIZE;
 
-    public WorkloadGenerator(int messagesPerSecond, BlockingQueue<Message> mQueue) {
-        this.messagesPerSecond = messagesPerSecond;
+    private final int MAX_POOL_SIZE;
+
+    private final BlockingQueue<Runnable> linkedBlockingQueue = new LinkedBlockingQueue<Runnable>();
+    private final int numberOfMessages;
+    private final int numberOfThreads;
+
+    private static final Logger LOGGER = Logger.getLogger(WorkloadGenerator.class);
+
+    public WorkloadGenerator(int numberOfMessages, int numberOfThreads, BlockingQueue<Message> mQueue) {
+        this.numberOfMessages = numberOfMessages;
+        this.numberOfThreads = numberOfThreads;
         messageQueue = mQueue;
+        CORE_POOL_SIZE = numberOfThreads;
+        MAX_POOL_SIZE = numberOfThreads;
+        publisherExecutor = new ThreadPoolExecutor(CORE_POOL_SIZE, MAX_POOL_SIZE, 20,TimeUnit.MILLISECONDS,new LinkedBlockingQueue<Runnable>());
     }
 
     public void start() {
+        int numberOfMessagePerThread = numberOfMessages / numberOfThreads;
         Runnable publisherTask = () -> {
-            for (int i = 0; i < messagesPerSecond; i++) {
+            for (int i = 0; i < numberOfMessagePerThread; i++) {
                 String type = getType();
                 Message message = new Message(type);
-                boolean queueFull = messageQueue.offer(message);
-                if(queueFull){
-                    System.out.println("Queue is full...");
-                }
+                messageQueue.offer(message);
+
             }
-            System.out.println(messagesPerSecond +" Message pushed ");
+            LOGGER.info(numberOfMessagePerThread +" Message pushed in "+Thread.currentThread().getName());
         };
-
-
-        publisherExecutor.scheduleAtFixedRate(publisherTask, 0,1 , TimeUnit.SECONDS);
-
-
+        for (int i = 0; i < numberOfThreads; i++) {
+            publisherExecutor.execute(publisherTask);
+        }
     }
 
     private String getType() {
@@ -47,8 +58,15 @@ public class WorkloadGenerator {
         return null;
     }
 
-    public void stop() {
+    public void stop() throws InterruptedException {
+        long startTime = System.currentTimeMillis();
+        LOGGER.info("Workload shutdown triggered:");
         publisherExecutor.shutdown();
+        long endTime = System.currentTimeMillis();
+        LOGGER.info("Workload shutdown passed:"+(endTime - startTime));
+        startTime = System.currentTimeMillis();
+        publisherExecutor.awaitTermination(1000,TimeUnit.MILLISECONDS);
+        LOGGER.info("Waited for Termination:"+( System.currentTimeMillis() - startTime));
 
     }
 
